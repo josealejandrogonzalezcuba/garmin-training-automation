@@ -1,0 +1,52 @@
+name: Weekly training check-in
+
+on:
+  schedule:
+    # Domingos 19:00 UTC = 21:00 hora de España en verano (CEST).
+    # Cuando España cambie a horario de invierno (finales de octubre), cambiar a '0 20 * * 0'.
+    - cron: "0 19 * * 0"
+  workflow_dispatch: {}  # permite lanzarlo a mano desde la pestaña "Actions" de GitHub
+
+permissions:
+  contents: write  # necesario para que el job pueda hacer commit y push
+
+jobs:
+  checkin:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clonar el repo
+        uses: actions/checkout@v4
+
+      - name: Instalar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar dependencias
+        run: pip install anthropic requests pydantic reportlab
+
+      - name: Ejecutar el check-in
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          INTERVALS_API_KEY: ${{ secrets.INTERVALS_API_KEY }}
+          INTERVALS_ATHLETE_ID: ${{ secrets.INTERVALS_ATHLETE_ID }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          RECIPIENT_EMAIL: ${{ secrets.RECIPIENT_EMAIL }}
+        run: python scripts/weekly_checkin.py
+
+      - name: Guardar el PDF generado como artifact (para poder inspeccionarlo)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: semana-actual-pdf
+          path: semana-actual.pdf
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Guardar cambios en el repo
+        run: |
+          git config user.name "Ironman Check-in Bot"
+          git config user.email "actions@github.com"
+          git add data/registro-entrenamiento.md data/plan-macro.md
+          git diff --cached --quiet || git commit -m "Check-in semanal automático $(date -u +%Y-%m-%d)"
+          git push
